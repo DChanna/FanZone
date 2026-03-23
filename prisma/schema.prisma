@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ============================================
+// Auth / Users
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  displayName   String
+  passwordHash  String?
+  avatar        String?
+  bio           String?
+  favoriteTeams String    @default("[]") // JSON array
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  bets       Bet[]
+  positions  Position[]
+  posts      Post[]
+  comments   Comment[]
+  likes      Like[]
+  messages   ChatMessage[]
+  memberships CommunityMember[]
+
+  followers  Follow[] @relation("following")
+  following  Follow[] @relation("follower")
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("follower", fields: [followerId], references: [id])
+  following User @relation("following", fields: [followingId], references: [id])
+
+  @@unique([followerId, followingId])
+}
+
+// ============================================
+// Sports / Games
+// ============================================
+
+model Game {
+  id          String   @id @default(cuid())
+  externalId  String?  @unique
+  sport       String   // nfl, nba, mlb, nhl, soccer, mma, tennis
+  status      String   @default("scheduled") // scheduled, live, final, delayed, postponed
+  startTime   DateTime
+  homeTeamId  String
+  awayTeamId  String
+  homeScore   Int      @default(0)
+  awayScore   Int      @default(0)
+  period      String?
+  clock       String?
+  venue       String?
+  broadcast   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  homeTeam Team @relation("homeGames", fields: [homeTeamId], references: [id])
+  awayTeam Team @relation("awayGames", fields: [awayTeamId], references: [id])
+  posts    Post[]
+}
+
+model Team {
+  id           String  @id @default(cuid())
+  externalId   String? @unique
+  name         String
+  abbreviation String
+  sport        String
+  logo         String?
+  primaryColor String  @default("#333333")
+
+  homeGames Game[] @relation("homeGames")
+  awayGames Game[] @relation("awayGames")
+}
+
+// ============================================
+// Bet Tracking
+// ============================================
+
+model Bet {
+  id             String   @id @default(cuid())
+  userId         String
+  type           String   // spread, moneyline, over_under, prop, parlay, futures
+  sportsbook     String   // draftkings, fanduel, betmgm, caesars, pointsbet, other
+  stake          Float
+  potentialPayout Float
+  status         String   @default("pending") // pending, won, lost, push, cashed_out
+  placedAt       DateTime @default(now())
+  settledAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User     @relation(fields: [userId], references: [id])
+  legs BetLeg[]
+}
+
+model BetLeg {
+  id        String  @id @default(cuid())
+  betId     String
+  game      String  // description of the game
+  selection String
+  odds      Float
+  result    String? // pending, won, lost, push
+
+  bet Bet @relation(fields: [betId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// Event Contracts (Kalshi-style)
+// ============================================
+
+model EventContract {
+  id        String   @id @default(cuid())
+  title     String
+  sport     String
+  category  String
+  yesPrice  Float
+  noPrice   Float
+  volume    Int      @default(0)
+  expiresAt DateTime
+  settled   Boolean  @default(false)
+  result    String?  // yes, no, null
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  positions Position[]
+}
+
+model Position {
+  id           String   @id @default(cuid())
+  userId       String
+  contractId   String
+  side         String   // yes, no
+  quantity     Int
+  avgPrice     Float
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user     User          @relation(fields: [userId], references: [id])
+  contract EventContract @relation(fields: [contractId], references: [id])
+}
+
+// ============================================
+// Community / Social
+// ============================================
+
+model Post {
+  id        String   @id @default(cuid())
+  authorId  String
+  content   String
+  gameId    String?
+  tags      String   @default("[]") // JSON array
+  likes     Int      @default(0)
+  reposts   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author   User      @relation(fields: [authorId], references: [id])
+  game     Game?     @relation(fields: [gameId], references: [id])
+  comments Comment[]
+  likedBy  Like[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([postId, userId])
+}
+
+model Community {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  sport       String?
+  avatar      String?
+  banner      String?
+  createdAt   DateTime @default(now())
+
+  members CommunityMember[]
+  messages ChatMessage[]
+}
+
+model CommunityMember {
+  id          String   @id @default(cuid())
+  communityId String
+  userId      String
+  role        String   @default("member") // member, moderator, admin
+  joinedAt    DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([communityId, userId])
+}
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  communityId String
+  userId      String
+  content     String
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+}
